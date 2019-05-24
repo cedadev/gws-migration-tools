@@ -8,7 +8,6 @@ from gws_migration_tools.gws import get_mgr_directory
 
 
 class RequestStatus(Enum):
-    CREATING = 0
     NEW = 1
     SUBMITTED = 2
     DONE = 3
@@ -31,6 +30,17 @@ class NotInitialised(Exception):
     pass
 
 
+def _make_tmp_path(path):
+    dirname = os.path.dirname(path)
+    filename = os.path.basename(path)
+    return os.path.join(dirname, '.tmp_' + filename)
+
+
+def _is_tmp_path(path):
+    # path may be the full path or just the filename
+    return os.path.basename(path).startswith('.tmp_')
+
+
 class RequestBase(object):
 
     def __init__(self, filename, requests_mgr, status, reqid=None):
@@ -44,9 +54,24 @@ class RequestBase(object):
             self.reqid = reqid
 
 
-    def create(self, *args, **kwargs):
-        self._write(*args, **kwargs)
-        self.set_status(RequestStatus.NEW)
+    def write(self, *args, **kwargs):
+        content = self._encode(*args, **kwargs)
+        path = self._path
+        tmp_path = _make_tmp_path(path)
+
+        try:
+            with open(tmp_path, "w") as f:
+                f.write(content)
+            os.chmod(tmp_path, 0o644)
+            os.rename(tmp_path, path)
+
+        except OSError as exc:
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
+            raise exc
+        
 
 
     def read(self):
@@ -74,15 +99,6 @@ class RequestBase(object):
     def _path(self):
         return self.requests_mgr.get_request_file_path(self.filename,
                                                         self.status)
-
-
-    def _write(self, *args, **kwargs):
-        if self.status != RequestStatus.CREATING:
-            raise ValueError('write only permitted in CREATING status')
-        content = self._encode(*args, **kwargs)
-        with open(self._path, "w") as f:
-            f.write(content)
-        os.chmod(self._path, 0o644)
 
     
     def _encode(self):
@@ -277,14 +293,16 @@ class RequestsManagerBase(object):
             user = get_user_login_name()
 
         if statuses == None:
-            statuses = [status for status in all_statuses
-                        if status.name != 'CREATING']
+            statuses = all_statuses
         
         reqs = []
 
         for status in statuses:
             dir_path = self.get_dir_for_status(status)
             for filename in os.listdir(dir_path):
+                if _is_tmp_path(filename):
+                    continue
+
                 req_user, req_id, req_date = self.parse_filename(filename)
                 if reqid != None and req_id != reqid:
                     continue
@@ -342,9 +360,9 @@ class RequestsManagerBase(object):
         filename = self.make_filename(user, reqid)
         request = self._request_class(filename,
                                       self,
-                                      RequestStatus.CREATING,
+                                      RequestStatus.NEW,
                                       reqid=reqid)
-        request.create(*args, **kwargs)
+        request.write(*args, **kwargs)
         return request
         
         
@@ -358,7 +376,6 @@ class RequestsManagerBase(object):
 class MigrateRequestsManager(RequestsManagerBase):
     
     dir_lookup = { 
-        RequestStatus.CREATING: '.creating_migrate',
         RequestStatus.NEW: 'to-migrate',
         RequestStatus.SUBMITTED: 'migrating',
         RequestStatus.DONE: 'migrated',
@@ -374,7 +391,6 @@ class MigrateRequestsManager(RequestsManagerBase):
 class RetrieveRequestsManager(RequestsManagerBase):
 
     dir_lookup = {
-        RequestStatus.CREATING: '.creating_retrieve',
         RequestStatus.NEW: 'to-retrieve',
         RequestStatus.SUBMITTED: 'retrieving',
         RequestStatus.DONE: 'retrieved',
