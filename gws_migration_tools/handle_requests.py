@@ -84,6 +84,13 @@ def check_placeholder():
         return False
     
 
+def submit_placeholder(params):
+    import random
+    ext_id = random.randint(1000, 2000)
+    print("dummy external ID = {}".format(ext_id))
+    return ext_id
+    
+
 
 class Migrate(RequestHandlerBase):
 
@@ -91,8 +98,9 @@ class Migrate(RequestHandlerBase):
 
     @classmethod
     def submit(cls, req):
+        print("Submit migrate (place holder)")
         params = req.read()
-        print("Submit migrate:", params)
+        req.set_external_id(submit_placeholder(params))
 
     @classmethod
     def check(cls, req):
@@ -107,8 +115,9 @@ class Retrieve(RequestHandlerBase):
 
     @classmethod
     def submit(cls, req):
+        print("Submit retrieve (place holder)")
         params = req.read()
-        print("Submit retrieve:", params)
+        req.set_external_id(submit_placeholder(params))
 
     @classmethod
     def check(cls, req):

@@ -83,6 +83,12 @@ class RequestBase(object):
             raise BadFileContent('could not parse {}'.format(self._path))
 
 
+    def set_external_id(self, ext_id):
+        params = self.read()
+        params['external_id'] = ext_id
+        self.write(**params)
+
+
     def dump(self):
         print(self)
         self._dump(self.read())
@@ -130,24 +136,40 @@ class RequestBase(object):
             self.status.name)
 
 
+    def _encode_int_or_none(self, i):
+        if i == None:
+            return '-'
+        else:
+            return str(i)
+
+
+    def _decode_int_or_none(self, s):
+        if s == '-':
+            return None
+        else:
+            return int(s)
+
 
 class MigrateRequest(RequestBase):
 
     request_type = 'migration'
 
 
-    def _encode(self, path):
-        return '{}\n'.format(path)
+    def _encode(self, path, external_id=None):
+        return '{}\n{}\n'.format(self._encode_int_or_none(external_id), 
+                                 path)
 
 
     def _decode(self, content):
         lines = self._get_non_empty_lines(content)
         n = len(lines)
-        if n == 1:
-            path = lines[0]
+        if n == 2:
+            external_id = self._decode_int_or_none(lines[0])            
+            path = lines[1]
         else:
             raise BadFileContent
-        return {'path': path}
+        return {'path': path,
+                'external_id': external_id}
 
 
     def _dump(self, d):
@@ -158,26 +180,28 @@ class RetrieveRequest(RequestBase):
 
     request_type = 'retrieval'
 
-    def _encode(self, orig_path, retrieve_path=None):
-        if retrieve_path:
-            return '{}\n{}\n'.format(orig_path, retrieve_path)
+    def _encode(self, orig_path, new_path=None, external_id=None):
+        line1 = self._encode_int_or_none(external_id)
+        if new_path:
+            return '{}\n{}\n{}\n'.format(line1, orig_path, new_path)
         else:
-            return '{}\n'.format(orig_path)
+            return '{}\n{}\n'.format(line1, orig_path)
         
 
     def _decode(self, content):
         lines = self._get_non_empty_lines(content)
         n = len(lines)
-        if n == 1:
-            orig_path = lines[0]
+        if n == 2:
             new_path = None
-        elif n == 2:
-            orig_path = lines[0]
-            new_path = lines[1]
+        elif n == 3:
+            new_path = lines[2]
         else:
             raise BadFileContent
+        external_id = self._decode_int_or_none(lines[0])
+        orig_path = lines[1]
         return {'orig_path': orig_path,
-                'new_path': new_path}
+                'new_path': new_path,
+                'external_id': external_id}
 
 
     def _dump(self, d):
@@ -187,6 +211,9 @@ class RetrieveRequest(RequestBase):
             print(" restore to original location")
         else:
             print(" restore to {}".format(new_path))
+        ext_id = d['external_id']
+        if ext_id != None:
+            print(" external ID: {}".format(ext_id))
 
 
 
