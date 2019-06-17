@@ -6,7 +6,10 @@ import re
 from gws_migration_tools.util import get_user_login_name
 from gws_migration_tools.gws import get_mgr_directory
 
-import gws_migration_tools.dummy_jdma_iface as jdma_iface
+## uncomment one of...
+#import gws_migration_tools.dummy_jdma_iface as jdma_iface   # dummy code only
+#from gws_migration_tools.jdma_iface import jdma_iface   # elastictape for production
+from gws_migration_tools.jdma_iface_test import jdma_iface   # objectstore for testing
 
 
 class RequestStatus(Enum):
