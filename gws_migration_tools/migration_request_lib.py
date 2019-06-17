@@ -6,6 +6,8 @@ import re
 from gws_migration_tools.util import get_user_login_name
 from gws_migration_tools.gws import get_mgr_directory
 
+import gws_migration_tools.dummy_jdma_iface as jdma_iface
+
 
 class RequestStatus(Enum):
     NEW = 1
@@ -150,6 +152,25 @@ class RequestBase(object):
             return int(s)
 
 
+    def claim_and_submit(self):
+        self.set_status(RequestStatus.SUBMITTED)
+        return "submitted: {}".format(self)
+
+    
+    def monitor(self):
+        succeeded = self.check()  # True, False, or None
+        if succeeded == True:
+            message = "succeeded: {}".format(self)
+            self.set_status(RequestStatus.DONE)
+        elif succeeded == False:
+            message = "failed: {}".format(self)
+            self.set_status(RequestStatus.FAILED)
+        else:
+            message = "still waiting: {}".format(self)
+        return message
+        
+
+
 class MigrateRequest(RequestBase):
 
     request_type = 'migration'
@@ -174,6 +195,19 @@ class MigrateRequest(RequestBase):
 
     def _dump(self, d):
         print(" path to migrate: {}".format(d['path']))
+
+
+    def submit(self):
+        params = self.read()
+        external_id = jdma_iface.submit_migrate(params)
+        self.set_external_id(external_id)
+
+
+    def check(self):
+        params = self.read()
+        return jdma_iface.check(params)
+        
+        
 
 
 class RetrieveRequest(RequestBase):
@@ -215,6 +249,16 @@ class RetrieveRequest(RequestBase):
         if ext_id != None:
             print(" external ID: {}".format(ext_id))
 
+
+    def submit(self):
+        params = self.read()
+        external_id = jdma_iface.submit_retrieve(params)
+        self.set_external_id(external_id)
+
+
+    def check(self):
+        params = self.read()
+        return jdma_iface.check(params)
 
 
 

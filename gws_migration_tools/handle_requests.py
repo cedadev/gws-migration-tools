@@ -54,81 +54,10 @@ def parse_args(arg_list = None):
     return args
 
 
-
-class RequestHandlerBase(object):
-
-    @classmethod
-    def claim_and_submit(cls, req):        
-        req.set_status(RequestStatus.SUBMITTED)
-        cls.submit(req)
-
-    @classmethod
-    def monitor(cls, req):
-        succeeded = cls.check(req)  # True, False, or None
-        if succeeded == True:
-            print("succeeded: {}".format(req))
-            req.set_status(RequestStatus.DONE)
-        elif succeeded == False:
-            print("failed: {}".format(req))
-            req.set_status(RequestStatus.FAILED)
-        else:
-            print("still waiting: {}".format(req))
-
-
-def check_placeholder():
-    print("Placeholder: did it succeed, enter Y or N, or hit enter if still running")
-    line = sys.stdin.readline().upper()
-    if line.startswith("Y"):
-        return True
-    if line.startswith("N"):
-        return False
-    
-
-def submit_placeholder(params):
-    import random
-    ext_id = random.randint(1000, 2000)
-    print("dummy external ID = {}".format(ext_id))
-    return ext_id
-    
-
-
-class Migrate(RequestHandlerBase):
-
-    requests_manager_class = MigrateRequestsManager
-
-    @classmethod
-    def submit(cls, req):
-        print("Submit migrate (place holder)")
-        params = req.read()
-        req.set_external_id(submit_placeholder(params))
-
-    @classmethod
-    def check(cls, req):
-        params = req.read()
-        print("Check migrate:", params)
-        return check_placeholder()
-
-
-class Retrieve(RequestHandlerBase):
-
-    requests_manager_class = RetrieveRequestsManager
-
-    @classmethod
-    def submit(cls, req):
-        print("Submit retrieve (place holder)")
-        params = req.read()
-        req.set_external_id(submit_placeholder(params))
-
-    @classmethod
-    def check(cls, req):
-        params = req.read()
-        print("Check retrieve:", params)
-        return check_placeholder()
-
-
 class Submit:
     input_status = RequestStatus.NEW
     method = 'claim_and_submit'
+
 
 class Monitor:
     input_status = RequestStatus.SUBMITTED
@@ -139,11 +68,11 @@ def main():
 
     args = parse_args()
 
-    request_handlers = []
+    request_manager_classes = []
     if args.migrate:
-        request_handlers.append(Migrate)
+        request_manager_classes.append(SubmitRequestsManager)
     if args.retrieve:
-        request_handlers.append(Retrieve)
+        request_manager_classes.append(RetrieveRequestsManager)
 
     actions = []
     # monitor before submit (avoids pointlessly checking requests
@@ -160,9 +89,9 @@ def main():
             print("Skipping group workspace {} - it seems you are not the GWS manager".format(gws_root))
             continue
 
-        for req_handler in request_handlers:
+        for reqs_mgr_class in request_manager_classes:
 
-            reqs_mgr = req_handler.requests_manager_class(gws_root)
+            reqs_mgr = reqs_mgr_class(gws_root)
 
             for action in actions:
 
@@ -172,5 +101,7 @@ def main():
                 reqs.sort(key=lambda req:req.reqid)
 
                 for req in reqs:
-                    func = getattr(req_handler, action.method)
-                    func(req)
+                    method = getattr(req, action.method)
+                    message = method()
+                    if message:
+                        print(message)
