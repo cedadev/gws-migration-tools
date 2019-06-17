@@ -1,7 +1,9 @@
+import sys
 import random
 
 def check(params):
-    print("Check placeholder: did it succeed, enter Y or N, or hit enter if still running")
+    print("Check placeholder: ", params)
+    print("did it succeed, enter Y or N, or hit enter if still running")
     line = sys.stdin.readline().upper()
     if line.startswith("Y"):
         return True
@@ -10,12 +12,12 @@ def check(params):
     
 
 def submit_migrate(params):
-    print("submit migrate placeholder")
+    print("submit migrate placeholder", params)
     return _gen_dummy_submit()
 
 
 def submit_retrieve(params):
-    print("submit retrieve placeholder")
+    print("submit retrieve placeholder", params)
     return _gen_dummy_submit()
 
 

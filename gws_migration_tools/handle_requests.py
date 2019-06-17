@@ -1,4 +1,3 @@
-import sys
 import argparse
 
 from gws_migration_tools import gws
@@ -70,7 +69,7 @@ def main():
 
     request_manager_classes = []
     if args.migrate:
-        request_manager_classes.append(SubmitRequestsManager)
+        request_manager_classes.append(MigrateRequestsManager)
     if args.retrieve:
         request_manager_classes.append(RetrieveRequestsManager)
 

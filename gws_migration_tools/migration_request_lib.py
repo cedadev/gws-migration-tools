@@ -154,6 +154,7 @@ class RequestBase(object):
 
     def claim_and_submit(self):
         self.set_status(RequestStatus.SUBMITTED)
+        self.submit()
         return "submitted: {}".format(self)
 
     
@@ -195,6 +196,9 @@ class MigrateRequest(RequestBase):
 
     def _dump(self, d):
         print(" path to migrate: {}".format(d['path']))
+        ext_id = d['external_id']
+        if ext_id != None:
+            print(" external ID: {}".format(ext_id))
 
 
     def submit(self):
