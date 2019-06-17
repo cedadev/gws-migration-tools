@@ -23,9 +23,7 @@ def parse_args(arg_list = None):
     return parser.parse_args()
 
 
-def main():
-    
-    args = parse_args()
+def create_request(args):
 
     gws_root = gws.get_gws_root_from_path(args.orig_dir)
     
@@ -35,7 +33,19 @@ def main():
     
     rrm = RetrieveRequestsManager(gws_root)
 
-    request = rrm.create_request(args.orig_dir, args.dest_dir)
+    return rrm.create_request(args.orig_dir, args.dest_dir)
+    
+
+def main():
+    
+    args = parse_args()
+
+    try:
+        req = create_request(args)
+    except Exception as exc:
+        print(("Creation of request failed with the following error:\n {}"
+               ).format(exc))
+        sys.exit(1)
 
     print("created request")
-    request.dump()
+    req.dump()

@@ -3,7 +3,8 @@ import argparse
 
 
 from gws_migration_tools import gws
-from gws_migration_tools.migration_request_lib import MigrateRequestsManager
+from gws_migration_tools.migration_request_lib \
+    import MigrateRequestsManager, NotInitialised
 
 
 def parse_args(arg_list = None):
@@ -18,15 +19,25 @@ def parse_args(arg_list = None):
     return parser.parse_args()
 
 
+def create_request(args):
+
+    gws_root = gws.get_gws_root_from_path(args.directory)
+
+    rrm = MigrateRequestsManager(gws_root)
+
+    return rrm.create_request(args.directory)
+
+
 def main():
     
     args = parse_args()
 
-    gws_root = gws.get_gws_root_from_path(args.directory)
-    
-    rrm = MigrateRequestsManager(gws_root)
-
-    request = rrm.create_request(args.directory)
+    try:
+        req = create_request(args)
+    except Exception as exc:
+        print(("Creation of request failed with the following error:\n {}"
+               ).format(exc))
+        sys.exit(1)
 
     print("created request")
-    request.dump()
+    req.dump()

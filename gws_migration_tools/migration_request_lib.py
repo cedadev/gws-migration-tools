@@ -14,10 +14,11 @@ from gws_migration_tools.jdma_iface_test import jdma_iface   # objectstore for t
 
 class RequestStatus(Enum):
     NEW = 1
-    SUBMITTED = 2
-    DONE = 3
-    FAILED = 4
-    WITHDRAWN = 5
+    SUBMITTING = 2
+    SUBMITTED = 3
+    DONE = 4
+    FAILED = 5
+    WITHDRAWN = 6
 
 
 all_statuses = [v for v in RequestStatus.__members__.values()]
@@ -32,7 +33,9 @@ class BadFileContent(Exception):
 
 
 class NotInitialised(Exception):
-    pass
+    def __str__(self):
+        return ('Migrations have not yet been initialised for this group '
+                'workspace by the GWS manager')
 
 
 def _make_tmp_path(path):
@@ -156,8 +159,9 @@ class RequestBase(object):
 
 
     def claim_and_submit(self):
-        self.set_status(RequestStatus.SUBMITTED)
+        self.set_status(RequestStatus.SUBMITTING)
         self.submit()
+        self.set_status(RequestStatus.SUBMITTED)
         return "submitted: {}".format(self)
 
     
@@ -455,6 +459,7 @@ class MigrateRequestsManager(RequestsManagerBase):
     
     dir_lookup = { 
         RequestStatus.NEW: 'to-migrate',
+        RequestStatus.SUBMITTING: 'submitting-migrate',
         RequestStatus.SUBMITTED: 'migrating',
         RequestStatus.DONE: 'migrated',
         RequestStatus.FAILED: 'failed-migrations',
@@ -470,6 +475,7 @@ class RetrieveRequestsManager(RequestsManagerBase):
 
     dir_lookup = {
         RequestStatus.NEW: 'to-retrieve',
+        RequestStatus.SUBMITTING: 'submitting-retrieve',
         RequestStatus.SUBMITTED: 'retrieving',
         RequestStatus.DONE: 'retrieved',
         RequestStatus.FAILED: 'failed-retrievals',       

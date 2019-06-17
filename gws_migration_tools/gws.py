@@ -3,7 +3,11 @@ import sys
 
 
 class NotAGroupWorkspace(Exception):
-    pass
+    def __str__(self):
+        if self.args:
+            return "{} is not a group workspace".format(self.args[0])
+        else:
+            return "not a group workspace"
 
 
 def get_gws_root_from_path(path):

@@ -6,13 +6,16 @@ from gws_migration_tools.util import get_user_login_name
 from gws_migration_tools.gws import get_gws_root_from_path
 
 
+class JDMAInterfaceError(Exception):
+    pass
+
 
 class JDMAInterface(object):
 
     def __init__(self, username=None):
         if not username:
             username = get_user_login_name()
-        self._username = username
+        self.username = username
         self._set_storage_params()
 
 
@@ -29,9 +32,14 @@ class JDMAInterface(object):
             label is this directory to be uploaded
         """
         
-        path = os.normpath(params['path'])
+        path = os.path.normpath(params['path'])
 
         workspace = self._get_workspace(path)
+
+        batch_id = self._get_batch_id_for_path(path)
+        if batch_id != None:
+            raise JDMAInterfaceError(('Already migrated as batch ID: {}'
+                                      ).format(batch_id))
 
         resp = jdma_lib.upload_files(
             self.username,
@@ -50,21 +58,28 @@ class JDMAInterface(object):
         return os.path.basename(os.path.normpath(gws_root))
 
     
+    def _get_batch_id_for_path(self, path):
+
+        workspace = self._get_workspace(path)
+
+        resp = jdma_lib.get_batch(self.username,
+                                  workspace=workspace,
+                                  label=path)
+
+        # For now, the test for not found is a 500 response.
+        # Replace this as appropriate once this is fixed.
+        if resp.status_code == 500:
+            return None
+        else:
+            return resp.json()['migration_id']
+
+    
     def submit_retrieve(self, params):
 
-        orig_path = os.normpath(params['orig_path'])
-        new_path = os.normpath(params['new_path'])
-
-        if not new_path:
-            new_path = orig_path
+        orig_path = os.path.normpath(params['orig_path'])
+        new_path = os.path.normpath(params['new_path'] or orig_path)
         
-        workspace = self._get_workspace(orig_path)
-
-        batches = get_batch(self.username,
-                            workspace=workspace,
-                            label=orig_path)
-
-        batch_id = batches[0].....  # FIXME
+        batch_id = self._get_batch_id_for_path(orig_path)
         
         resp = jdma_lib.download_files(            
             self.username,
@@ -78,8 +93,14 @@ class JDMAInterface(object):
     def check(self, params):
         
         ext_id = params['external_id']
+        if not ext_id:
+            raise JDMAInterfaceError('attempt to check a request that has not '
+                                     'yet been submitted')
 
-        ext_req = jdma_req.get_request(self.username, req_id=ext_id)
+        resp = jdma_lib.get_request(self.username, req_id=ext_id)
+
+        ext_req = resp.json()
+
         stage = ext_req['stage']
         stage_name = jdma_common.get_request_stage(stage)
 
