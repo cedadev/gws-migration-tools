@@ -4,7 +4,7 @@ import argparse
 
 from gws_migration_tools import gws
 from gws_migration_tools.migration_request_lib import \
-    MigrateRequestsManager, RetrieveRequestsManager, RequestStatus
+    RequestsManager, RequestStatus
 
 
 def parse_args(arg_list = None):
@@ -36,8 +36,13 @@ def main():
     if args.current:
         statuses = (RequestStatus.NEW, RequestStatus.SUBMITTED)
 
-    for cls in MigrateRequestsManager, RetrieveRequestsManager:
-        mgr = cls(gws_root)
+    try:
+        mgr = RequestsManager(gws_root)
         for req in mgr.scan(all_users=args.all_users,
                             statuses=statuses):
             req.dump()
+    except Exception as exc:
+        print(("Listing requests failed with the following error:\n {}"
+               ).format(exc))
+        raise
+        sys.exit(1)

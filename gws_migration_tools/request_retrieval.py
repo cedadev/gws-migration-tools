@@ -3,7 +3,7 @@ import argparse
 
 
 from gws_migration_tools import gws
-from gws_migration_tools.migration_request_lib import RetrieveRequestsManager
+from gws_migration_tools.migration_request_lib import RequestsManager
 
 
 def parse_args(arg_list = None):
@@ -31,9 +31,10 @@ def create_request(args):
         gws.get_gws_root_from_path(args.dest_dir) != gws_root):
         raise Exception("You cannot restore to a different Group Workspace.")
     
-    rrm = RetrieveRequestsManager(gws_root)
+    rm = RequestsManager(gws_root)
 
-    return rrm.create_request(args.orig_dir, args.dest_dir)
+    return rm.create_retrieval_request({'orig_path': args.orig_dir,
+                                        'new_path': args.dest_dir})
     
 
 def main():

@@ -2,7 +2,7 @@ import argparse
 
 from gws_migration_tools import gws
 from gws_migration_tools.migration_request_lib \
-    import MigrateRequestsManager, RetrieveRequestsManager, RequestStatus
+    import RequestsManager, RequestStatus
 
 
 def parse_args(arg_list = None):
@@ -12,28 +12,31 @@ def parse_args(arg_list = None):
         description=('interacts with JDMA on behalf of user, and update request statuses '
                      '(to be run by GWS manager, probably as a cron job)'))
 
-    req_types = parser.add_argument_group('request types (select at least one)')
+    req_types_container = parser.add_argument_group('request types (defaults to all)')
+
+    req_types = req_types_container.add_mutually_exclusive_group()
 
     req_types.add_argument('-m', '--migrate',
-                           help='act on migration requests',
+                           help='only act on migration requests',
                            action='store_true'
                        )
 
     req_types.add_argument('-r', '--retrieve',
-                           help='act on retrieval requests',
+                           help='only act on retrieval requests',
                            action='store_true'
                        )
 
-    action_types = parser.add_argument_group('actions types (select at least one)')
+    action_types_container = parser.add_argument_group('action types (defaults to all)')
+
+    action_types = action_types_container.add_mutually_exclusive_group()
 
     action_types.add_argument('-S', '--submit',
-                              help='submit new requests and mark them as in progress',
+                              help='only submit new requests',
                               action='store_true'
                           )
 
     action_types.add_argument('-M', '--monitor',
-                              help=('monitor existing requests, '
-                                    'and if finished, mark them as done or failed'),
+                              help=('only monitor already submitted requests'),
                               action='store_true'
                           )
 
@@ -44,21 +47,17 @@ def parse_args(arg_list = None):
 
     args = parser.parse_args()
 
-    if not (args.migrate or args.retrieve):
-        parser.error('No request types: add --migrate or --retrieve or both')
-
-    if not (args.submit or args.monitor):
-        parser.error('No action types: add --submit or --monitor or both')
-
     return args
 
 
 class Submit:
+    name = 'submit'
     input_status = RequestStatus.NEW
     method = 'claim_and_submit'
 
 
 class Monitor:
+    name = 'monitor'
     input_status = RequestStatus.SUBMITTED
     method = 'monitor'
 
@@ -67,19 +66,23 @@ def main():
 
     args = parse_args()
 
-    request_manager_classes = []
+    request_types = []
     if args.migrate:
-        request_manager_classes.append(MigrateRequestsManager)
-    if args.retrieve:
-        request_manager_classes.append(RetrieveRequestsManager)
+        request_types.append('migration')
+    elif args.retrieve:
+        request_types.append('retrieval')
+    else:
+        request_types = None  # no filter
 
     actions = []
     # monitor before submit (avoids pointlessly checking requests
     # that have only just been submitted)
     if args.monitor:
         actions.append(Monitor)
-    if args.submit:
+    elif args.submit:
         actions.append(Submit)
+    else:
+        actions = [Monitor, Submit]
 
     for gws_path in args.gws:
         gws_root = gws.get_gws_root_from_path(gws_path)
@@ -88,19 +91,24 @@ def main():
             print("Skipping group workspace {} - it seems you are not the GWS manager".format(gws_root))
             continue
 
-        for reqs_mgr_class in request_manager_classes:
+        reqs_mgr = RequestsManager(gws_root)
 
-            reqs_mgr = reqs_mgr_class(gws_root)
+        for action in actions:
 
-            for action in actions:
+            reqs = reqs_mgr.scan(all_users=True,
+                                 statuses=(action.input_status,),
+                                 request_types=request_types)
 
-                reqs = reqs_mgr.scan(all_users=True,
-                                     statuses=(action.input_status,))
+            reqs.sort(key=lambda req:req.reqid)
 
-                reqs.sort(key=lambda req:req.reqid)
-
-                for req in reqs:
-                    method = getattr(req, action.method)
+            for req in reqs:
+                method = getattr(req, action.method)
+                try:
                     message = method()
                     if message:
                         print(message)
+                except Exception as err:
+                    print("{} of request {}: failed with: {}"
+                          .format(action.name, req.reqid, err))
+
+                    raise

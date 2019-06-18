@@ -31,10 +31,9 @@ setup(
             'init-migrations = gws_migration_tools.init_migrations:main',
             'request-migration = gws_migration_tools.request_migration:main',
             'request-retrieval = gws_migration_tools.request_retrieval:main',
-            'list-tape-requests = gws_migration_tools.list_requests:main',
-            'withdraw-migration-request = gws_migration_tools.withdraw_migration_request:main',
-            'withdraw-retrieval-request = gws_migration_tools.withdraw_retrieval_request:main',
-            'handle-tape-requests = gws_migration_tools.handle_requests:main',
+            'list-offline-requests = gws_migration_tools.list_requests:main',
+            'withdraw-offline-request = gws_migration_tools.withdraw_request:main',
+            'handle-offline-requests = gws_migration_tools.handle_requests:main',
             ],
         }
 )

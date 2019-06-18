@@ -4,7 +4,7 @@ import argparse
 
 from gws_migration_tools import gws
 from gws_migration_tools.migration_request_lib import \
-    MigrateRequestsManager, RetrieveRequestsManager, NotInitialised
+    RequestsManager, NotInitialised
 
 
 def parse_args(arg_list = None):
@@ -31,11 +31,10 @@ def main():
         print("Exiting")
         sys.exit(1)
 
-    for cls in MigrateRequestsManager, RetrieveRequestsManager:
-        mgr = cls(gws_root)
-        try:
-            mgr.initialise()
-        except (OSError, NotInitialised):
-            print("Initialisation failed")
-            sys.exit(1)
+    mgr = RequestsManager(gws_root)
+    try:
+        mgr.initialise()
+    except (OSError, NotInitialised):
+        print("Initialisation failed")
+        sys.exit(1)
     print("created control files/directories under {}".format(mgr.base_dir))

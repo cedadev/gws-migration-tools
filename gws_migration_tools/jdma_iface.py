@@ -1,4 +1,5 @@
 import os
+import time
 
 from jdma_client import jdma_lib, jdma_common
 
@@ -32,14 +33,14 @@ class JDMAInterface(object):
             label is this directory to be uploaded
         """
         
-        path = os.path.normpath(params['path'])
+        path = os.path.normpath(params.get('path'))
 
         workspace = self._get_workspace(path)
 
         batch_id = self._get_batch_id_for_path(path)
         if batch_id != None:
-            raise JDMAInterfaceError(('Already migrated as batch ID: {}'
-                                      ).format(batch_id))
+            raise JDMAInterfaceError(('Path {} has already been migrated (as batch ID: {})'
+                                      ).format(path, batch_id))
 
         resp = jdma_lib.upload_files(
             self.username,
@@ -66,9 +67,7 @@ class JDMAInterface(object):
                                   workspace=workspace,
                                   label=path)
 
-        # For now, the test for not found is a 500 response.
-        # Replace this as appropriate once this is fixed.
-        if resp.status_code == 500:
+        if resp.status_code == 404:
             return None
         else:
             return resp.json()['migration_id']
@@ -76,8 +75,8 @@ class JDMAInterface(object):
     
     def submit_retrieve(self, params):
 
-        orig_path = os.path.normpath(params['orig_path'])
-        new_path = os.path.normpath(params['new_path'] or orig_path)
+        orig_path = os.path.normpath(params.get('orig_path'))
+        new_path = os.path.normpath(params.get('new_path') or orig_path)
         
         batch_id = self._get_batch_id_for_path(orig_path)
         
@@ -91,8 +90,16 @@ class JDMAInterface(object):
 
 
     def check(self, params):
+        """
+        Check status of a request.
+        Returns a dictionary with:
         
-        ext_id = params['external_id']
+           key 'succeeded' with value: True / False if completed/failed, 
+                                       or None if still in progress
+           and maybe a key 'message' with a message
+        """
+
+        ext_id = params.get('external_id')
         if not ext_id:
             raise JDMAInterfaceError('attempt to check a request that has not '
                                      'yet been submitted')
@@ -104,15 +111,21 @@ class JDMAInterface(object):
         stage = ext_req['stage']
         stage_name = jdma_common.get_request_stage(stage)
 
+        message = 'JDMA reported stage {} when checked at {}'.format(stage_name,
+                                                                     time.asctime())
+
         if stage_name in ('PUT_COMPLETED',
                           'GET_COMPLETED'):
-            return True
+            succeeded = True
         
         elif stage_name == 'FAILED':
-            return False
+            succeeded = False
 
         else:
-            return None
+            succeeded = None
+
+        return { 'succeeded': succeeded,
+                 'message': message}
         
         
 

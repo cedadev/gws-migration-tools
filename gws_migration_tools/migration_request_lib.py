@@ -2,6 +2,7 @@ import os
 from enum import Enum
 import datetime
 import re
+import json
 
 from gws_migration_tools.util import get_user_login_name
 from gws_migration_tools.gws import get_mgr_directory
@@ -56,14 +57,16 @@ class RequestBase(object):
         self.requests_mgr = requests_mgr
         self.status = status
         if reqid == None:
-            _, reqid, _ = self.requests_mgr.parse_filename(self.filename)
+            _, _, reqid, _ = self.requests_mgr.parse_filename(self.filename)
             self.reqid = reqid
         else:
             self.reqid = reqid
 
 
-    def write(self, *args, **kwargs):
-        content = self._encode(*args, **kwargs)
+    def write(self, params):
+        params = params.copy()
+        params['request_type'] = self.request_type
+        content = self._encode(params)
         path = self._path
         tmp_path = _make_tmp_path(path)
 
@@ -79,7 +82,6 @@ class RequestBase(object):
             except:
                 pass
             raise exc
-        
 
 
     def read(self):
@@ -92,14 +94,32 @@ class RequestBase(object):
 
 
     def set_external_id(self, ext_id):
-        params = self.read()
-        params['external_id'] = ext_id
-        self.write(**params)
+        return self.set_param('external_id', ext_id)
 
+
+    def set_message(self, message):
+        if message:
+            self.set_param('message', message)
+
+
+    def set_failed(self, message=None):
+        self.set_message(message)
+        self.set_status(RequestStatus.FAILED)
+
+
+    def set_param(self, key, value):
+        params = self.read()
+        params[key] = value
+        self.write(params)
+        
 
     def dump(self):
         print(self)
-        self._dump(self.read())
+        content = self.read()
+        self._dump(content)
+        message = content.get('message')
+        if message:
+            print(message)
         print("")
 
 
@@ -115,23 +135,29 @@ class RequestBase(object):
                                                         self.status)
 
     
-    def _encode(self):
-        raise NotImplementedError
+    def _encode(self, params):
+        self._check_params(params)
+        return json.dumps(params)
 
 
-    def _decode(self):
-        raise NotImplementedError
+    def _decode(self, content):
+        d = json.loads(content)
+        self._check_params(d)
+        return d
+        
 
-
-    def _get_non_empty_lines(self, content):
-        lines = [line.strip() for line in content.split('\n')]
-        return [line for line in lines if line]
-
-
+    def _check_params(self, params):
+        for key in self._compulsory_params:
+            if key not in params:
+                raise TypeError("compulsory request parameter {} missing"
+                                .format(key))
+        
+    
     def __str__(self):
-        user, reqid, date = self.requests_mgr.parse_filename(self.filename)
+        user, request_type, reqid, date = \
+            self.requests_mgr.parse_filename(self.filename)
         return '<{} request: user={} id={} date={} status={}>'.format(
-            self.request_type,
+            request_type,
             user, reqid, date, 
             self.status.name)
 
@@ -160,13 +186,20 @@ class RequestBase(object):
 
     def claim_and_submit(self):
         self.set_status(RequestStatus.SUBMITTING)
-        self.submit()
-        self.set_status(RequestStatus.SUBMITTED)
-        return "submitted: {}".format(self)
+        try:
+            self.submit()            
+            self.set_status(RequestStatus.SUBMITTED)
+            return "submitted: {}".format(self)
+        except Exception as exc:
+            self.set_failed("request was not submitted because: {}".format(exc))
+            raise exc
 
     
     def monitor(self):
-        succeeded = self.check()  # True, False, or None
+        status = self.check()  # True, False, or None
+        succeeded = status['succeeded']
+        message = status.get('message')
+        self.set_message(message)
         if succeeded == True:
             message = "succeeded: {}".format(self)
             self.set_status(RequestStatus.DONE)
@@ -178,32 +211,21 @@ class RequestBase(object):
         return message
         
 
+    def check(self):
+        params = self.read()
+        return jdma_iface.check(params)
 
-class MigrateRequest(RequestBase):
+
+class MigrationRequest(RequestBase):
 
     request_type = 'migration'
 
-
-    def _encode(self, path, external_id=None):
-        return '{}\n{}\n'.format(self._encode_int_or_none(external_id), 
-                                 path)
-
-
-    def _decode(self, content):
-        lines = self._get_non_empty_lines(content)
-        n = len(lines)
-        if n == 2:
-            external_id = self._decode_int_or_none(lines[0])            
-            path = lines[1]
-        else:
-            raise BadFileContent
-        return {'path': path,
-                'external_id': external_id}
+    _compulsory_params = ['path']
 
 
     def _dump(self, d):
-        print(" path to migrate: {}".format(d['path']))
-        ext_id = d['external_id']
+        print(" path to migrate: {}".format(d.get('path')))
+        ext_id = d.get('external_id')
         if ext_id != None:
             print(" external ID: {}".format(ext_id))
 
@@ -211,52 +233,24 @@ class MigrateRequest(RequestBase):
     def submit(self):
         params = self.read()
         external_id = jdma_iface.submit_migrate(params)
-        self.set_external_id(external_id)
+        self.set_external_id(external_id)        
 
 
-    def check(self):
-        params = self.read()
-        return jdma_iface.check(params)
-        
-        
-
-
-class RetrieveRequest(RequestBase):
+class RetrievalRequest(RequestBase):
 
     request_type = 'retrieval'
 
-    def _encode(self, orig_path, new_path=None, external_id=None):
-        line1 = self._encode_int_or_none(external_id)
-        if new_path:
-            return '{}\n{}\n{}\n'.format(line1, orig_path, new_path)
-        else:
-            return '{}\n{}\n'.format(line1, orig_path)
-        
-
-    def _decode(self, content):
-        lines = self._get_non_empty_lines(content)
-        n = len(lines)
-        if n == 2:
-            new_path = None
-        elif n == 3:
-            new_path = lines[2]
-        else:
-            raise BadFileContent
-        external_id = self._decode_int_or_none(lines[0])
-        orig_path = lines[1]
-        return {'orig_path': orig_path,
-                'new_path': new_path,
-                'external_id': external_id}
+    _compulsory_params = ['orig_path']
 
 
     def _dump(self, d):
-        print(" original path: {}".format(d['orig_path']))
-        new_path = d['new_path']
+        print(" original path: {}".format(d.get('orig_path')))
+        new_path = d.get('new_path')
         if new_path == None:
             print(" restore to original location")
         else:
             print(" restore to {}".format(new_path))
-        ext_id = d['external_id']
+        ext_id = d.get('external_id')
         if ext_id != None:
             print(" external ID: {}".format(ext_id))
 
@@ -267,14 +261,27 @@ class RetrieveRequest(RequestBase):
         self.set_external_id(external_id)
 
 
-    def check(self):
-        params = self.read()
-        return jdma_iface.check(params)
+_request_class_map = {
+    'migration': MigrationRequest,
+    'retrieval': RetrievalRequest,
+}
 
 
-
-class RequestsManagerBase(object):
+class RequestsManager(object):
     
+    _dir_lookup = { 
+        RequestStatus.NEW: 'new',
+        RequestStatus.SUBMITTING: 'submitting',
+        RequestStatus.SUBMITTED: 'submitted',
+        RequestStatus.DONE: 'done',
+        RequestStatus.FAILED: 'failed',
+        RequestStatus.WITHDRAWN: 'withdrawn'
+        }
+
+
+    _last_id_file = '.last_id'
+
+
     def __init__(self, gws_root):
         self.gws_root = gws_root
 
@@ -286,14 +293,15 @@ class RequestsManagerBase(object):
 
     def get_dir_for_status(self, status):
         return os.path.join(self.base_dir,
-                            self.dir_lookup[status])
+                            self._dir_lookup[status])
 
 
     def _create_dir_for_status(self, status):
         path = self.get_dir_for_status(status)
         if not os.path.isdir(path):
             os.makedirs(path)
-            os.chmod(path, 0o1777)
+            if status == RequestStatus.NEW:
+                os.chmod(path, 0o1777)
         else:
             print("{} already exists".format(path))
 
@@ -320,7 +328,7 @@ class RequestsManagerBase(object):
         
 
     _fn_matcher = re.compile(
-        '(?P<user>[^-]+)-(?P<id>[0-9]+)-'
+        '(?P<user>[^-]+)-(?P<request_type>[^-]+)-(?P<id>[0-9]+)-'
         '(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})$'
         ).match
 
@@ -330,21 +338,23 @@ class RequestsManagerBase(object):
         if not m:
             raise BadFileName("cannot parse {}".format(filename))
         user = m.group('user')
+        request_type = m.group('request_type')
         reqid = int(m.group('id'))
         date = datetime.date(int(m.group('year')),
                              int(m.group('month')),
                              int(m.group('day')))
-        return user, reqid, date
+        return user, request_type, reqid, date
 
 
-    def make_filename(self, user, reqid, date=None):
+    def make_filename(self, user, request_type, reqid, date=None):
         if date == None:
             date = datetime.date.today()
-        return "{}-{}-{:04}-{:02}-{:02}".format(user, 
-                                                reqid, 
-                                                date.year,
-                                                date.month,
-                                                date.day)
+        return "{}-{}-{}-{:04}-{:02}-{:02}".format(user, 
+                                                   request_type, 
+                                                   reqid, 
+                                                   date.year,
+                                                   date.month,
+                                                   date.day)
 
 
     def withdraw(self, reqid):
@@ -365,7 +375,9 @@ class RequestsManagerBase(object):
         return reqs[0]
         
 
-    def scan(self, statuses=None, reqid=None, all_users=False):
+    def scan(self,
+             statuses=None, request_types=None,
+             reqid=None, all_users=False):
 
         self._check_initialised()
 
@@ -385,14 +397,21 @@ class RequestsManagerBase(object):
                 if _is_tmp_path(filename):
                     continue
 
-                req_user, req_id, req_date = self.parse_filename(filename)
+                req_user, request_type, req_id, req_date = \
+                                             self.parse_filename(filename)
                 if reqid != None and req_id != reqid:
                     continue
                 if user != None and req_user != user:
                     continue
-                request = self._request_class(filename,
-                                              self,
-                                              status)
+
+                if request_types != None and request_type not in request_types:
+                    continue
+
+                request_class = _request_class_map[request_type]
+
+                request = request_class(filename,
+                                        self,
+                                        status)
                 reqs.append(request)
 
         reqs.sort(key=lambda req: req.reqid)
@@ -412,7 +431,7 @@ class RequestsManagerBase(object):
         
     @property
     def _last_id_path(self):
-        return os.path.join(self.base_dir, self.last_id_file)
+        return os.path.join(self.base_dir, self._last_id_file)
 
 
     def _write_last_id(self, reqid):
@@ -433,64 +452,49 @@ class RequestsManagerBase(object):
         return next_id
 
 
-    def create_request(self, *args, **kwargs):
+    def create_request(self, request_class, *args, **kwargs):
 
         self._check_initialised()
 
         reqid = self._get_next_id()
         user = get_user_login_name()
-        filename = self.make_filename(user, reqid)
-        request = self._request_class(filename,
-                                      self,
-                                      RequestStatus.NEW,
-                                      reqid=reqid)
+        request_type = getattr(request_class, 'request_type')
+        filename = self.make_filename(user, request_type, reqid)
+        request = request_class(filename,
+                                self,
+                                RequestStatus.NEW,
+                                reqid=reqid)
         request.write(*args, **kwargs)
         return request
         
-        
+
     def __repr__(self):
         return '{}({})'.format(
             self.__class__.__name__,
             repr(self.gws_root))
-      
 
-        
-class MigrateRequestsManager(RequestsManagerBase):
+
+    def create_migration_request(self, *args, **kwargs):
+        return self.create_request(MigrationRequest, *args, **kwargs)
+
+    def create_retrieval_request(self, *args, **kwargs):
+        return self.create_request(RetrievalRequest, *args, **kwargs)
+
     
-    dir_lookup = { 
-        RequestStatus.NEW: 'to-migrate',
-        RequestStatus.SUBMITTING: 'submitting-migrate',
-        RequestStatus.SUBMITTED: 'migrating',
-        RequestStatus.DONE: 'migrated',
-        RequestStatus.FAILED: 'failed-migrations',
-        RequestStatus.WITHDRAWN: 'withdrawn-migrations'
-        }
-
-    _request_class = MigrateRequest
-
-    last_id_file = '.last_migration_id'
-
-
-class RetrieveRequestsManager(RequestsManagerBase):
-
-    dir_lookup = {
-        RequestStatus.NEW: 'to-retrieve',
-        RequestStatus.SUBMITTING: 'submitting-retrieve',
-        RequestStatus.SUBMITTED: 'retrieving',
-        RequestStatus.DONE: 'retrieved',
-        RequestStatus.FAILED: 'failed-retrievals',       
-        RequestStatus.WITHDRAWN: 'withdrawn-retrievals'
-    }
-
-    _request_class = RetrieveRequest
-    
-    last_id_file = '.last_retrieval_id'
-
-
+#
+#
+#
+## assign create_*_request methods for the request types
+#for _req_type, _cls in _request_class_map.items():
+#    setattr(RequestsManager, 
+#            'create_{}_request'.format(_req_type),
+#            (lambda self, *args, **kwargs:
+#             RequestsManager.create_request(self, _cls, *args, **kwargs)))
+#
 
 if __name__ == '__main__':
     
-    r = MigrateRequestsManager('/tmp/mygws')
+    r = RequestsManager('/tmp/mygws')
     r.initialise()
     print(r.get_dir_for_status(RequestStatus.NEW))
 

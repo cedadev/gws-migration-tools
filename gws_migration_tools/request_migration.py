@@ -4,7 +4,7 @@ import argparse
 
 from gws_migration_tools import gws
 from gws_migration_tools.migration_request_lib \
-    import MigrateRequestsManager, NotInitialised
+    import RequestsManager, NotInitialised
 
 
 def parse_args(arg_list = None):
@@ -23,9 +23,9 @@ def create_request(args):
 
     gws_root = gws.get_gws_root_from_path(args.directory)
 
-    rrm = MigrateRequestsManager(gws_root)
+    rm = RequestsManager(gws_root)
 
-    return rrm.create_request(args.directory)
+    return rm.create_migration_request({'path': args.directory})
 
 
 def main():
