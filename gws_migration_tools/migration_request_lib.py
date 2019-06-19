@@ -322,7 +322,7 @@ class RequestsManager(object):
         path = self.get_dir_for_status(status)
         if not os.path.isdir(path):
             os.makedirs(path)
-            if status == RequestStatus.NEW:
+            if status in (RequestStatus.NEW, RequestStatus.WITHDRAWN):
                 os.chmod(path, 0o1777)
         else:
             print("{} already exists".format(path))
