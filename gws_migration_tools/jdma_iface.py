@@ -1,5 +1,7 @@
 import os
 import time
+import re
+import sys
 
 from jdma_client import jdma_lib, jdma_common
 
@@ -85,8 +87,14 @@ class JDMAInterface(object):
 
 
     def _get_workspace(self, path):
+        """
+        From the path, return the workspace whose allocation will be used
+        by the JDMA.  This would exclude any _vol<number> part of the directory
+        path.
+        """
         gws_root = get_gws_root_from_path(path)
-        return os.path.basename(os.path.normpath(gws_root))
+        basename = os.path.basename(os.path.normpath(gws_root))
+        return re.sub('_vol[0-9]+$', '', basename)
 
     
 
@@ -110,7 +118,11 @@ class JDMAInterface(object):
                                   workspace=workspace,
                                   label=path)
 
-        if resp.status_code == 404:
+        if resp.status_code != 200:
+            if resp.status_code % 100 == 5:
+                sys.stderr.write(('Warning: JDMA responded with status code {} when checking for '
+                                  'existing batches. Assuming none found.\n'
+                                  ).format(resp.status_code))
             return None
 
         resp_dict = resp.json()
