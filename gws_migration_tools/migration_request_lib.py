@@ -4,7 +4,7 @@ import datetime
 import re
 import json
 
-from gws_migration_tools.util import get_user_login_name
+from gws_migration_tools.util import get_user_login_name, ensure_parent_dir_exists
 from gws_migration_tools.gws import get_mgr_directory
 
 #import gws_migration_tools.dummy_jdma_iface as jdma_iface   # dummy code only
@@ -25,6 +25,8 @@ class RequestStatus(Enum):
 
 
 all_statuses = [v for v in RequestStatus.__members__.values()]
+
+finished_statuses = [RequestStatus.DONE, RequestStatus.FAILED, RequestStatus.WITHDRAWN]
 
 
 class BadFileName(Exception):
@@ -54,10 +56,11 @@ def _is_tmp_path(path):
 
 class RequestBase(object):
 
-    def __init__(self, filename, requests_mgr, status, reqid=None):
+    def __init__(self, filename, requests_mgr, status, reqid=None, is_archived=False):
         self.filename = filename
         self.requests_mgr = requests_mgr
         self.status = status
+        self.is_archived = is_archived
         if reqid == None:
             _, _, reqid, _ = self.requests_mgr.parse_filename(self.filename)
             self.reqid = reqid
@@ -126,15 +129,32 @@ class RequestBase(object):
 
 
     def set_status(self, new_status):
+        if self.is_archived:
+            raise ValueError("status cannot be changed for archived request")
         self.requests_mgr.move_request_file(
             self.filename, self.status, new_status)
         self.status = new_status
 
 
+    def archive(self):
+        if self.status not in finished_statuses:
+            raise ValueError("request cannot be archived while still in progress : {}"
+                             .format(self))
+        self.is_archived=True
+        self.requests_mgr.archive_request_file(self.filename, self.status)
+
+
     @property
     def _path(self):
         return self.requests_mgr.get_request_file_path(self.filename,
-                                                        self.status)
+                                                       self.status,
+                                                       self.is_archived)
+
+    @property
+    def date(self):
+        _, _, _, date = self.requests_mgr.parse_filename(self.filename)
+        return date
+
 
     
     def _encode(self, params):
@@ -158,7 +178,8 @@ class RequestBase(object):
     def __str__(self):
         user, request_type, reqid, date = \
             self.requests_mgr.parse_filename(self.filename)
-        return '<{} request: user={} id={} date={} status={}>'.format(
+        return '<{}{} request: user={} id={} date={} status={}>'.format(
+            ('archived ' if self.is_archived else ''),
             request_type,
             user, reqid, date, 
             self.status.name)
@@ -301,6 +322,10 @@ class RequestsManager(object):
         }
 
 
+    _archive_dir = 'archive'
+    _requests_per_archive_dir = 100
+
+
     _last_id_file = '.last_id'
 
 
@@ -399,7 +424,8 @@ class RequestsManager(object):
 
     def scan(self,
              statuses=None, request_types=None,
-             reqid=None, all_users=False):
+             reqid=None, all_users=False,
+             include_archived=False):
 
         self._check_initialised()
 
@@ -415,7 +441,8 @@ class RequestsManager(object):
 
         for status in statuses:
             dir_path = self.get_dir_for_status(status)
-            for filename in os.listdir(dir_path):
+            for filename, is_archived in self._scan_dir(dir_path,
+                                                        include_archived=include_archived):
                 if _is_tmp_path(filename):
                     continue
 
@@ -433,21 +460,62 @@ class RequestsManager(object):
 
                 request = request_class(filename,
                                         self,
-                                        status)
+                                        status,
+                                        is_archived=is_archived)
                 reqs.append(request)
 
         reqs.sort(key=lambda req: req.reqid)
         return reqs
 
 
-    def get_request_file_path(self, filename, status):
-        return os.path.join(self.get_dir_for_status(status),
-                            filename)
+    def _scan_dir(self, path, include_archived=False):
+        """
+        iterable which yields (filename, is_archived)
+        """
+
+        for filename in os.listdir(path):
+            # check it is not the archive subdir
+            # (if necessary could also do os.path.isfile test but that 
+            # is more file metadata I/O on GWS for sake of files that might
+            # get filtered out anyway, so just use the filename for this test)
+            if filename != self._archive_dir:
+                yield (filename, False)
+
+        if include_archived:
+            archived_reqs_root = os.path.join(path, self._archive_dir)
+            if os.path.isdir(archived_reqs_root):
+                for dirpath, dirnames, filenames in os.walk(archived_reqs_root):
+                    for filename in filenames:
+                        yield (filename, True)
+
+
+    def get_request_file_path(self, filename, status, is_archived):
+
+        status_dir = self.get_dir_for_status(status)
+
+        if is_archived:
+            _, _, req_id, _ = self.parse_filename(filename)
+            archive_subdir = os.path.join(self._archive_dir,
+                                          str((req_id - 1) // self._requests_per_archive_dir + 1))
+            return os.path.join(status_dir, archive_subdir, filename)
+            
+        else:
+            return os.path.join(status_dir, filename)
+
+
+    def archive_request_file(self, filename, status):
+        old_path = self.get_request_file_path(filename, status, False)
+        new_path = self.get_request_file_path(filename, status, True)
+        ensure_parent_dir_exists(new_path)
+        os.rename(old_path, new_path)
 
 
     def move_request_file(self, filename, old_status, new_status):
-        old_path = self.get_request_file_path(filename, old_status)
-        new_path = self.get_request_file_path(filename, new_status)
+        """
+        move a request file - only valid for a request that has not been archived
+        """
+        old_path = self.get_request_file_path(filename, old_status, False)
+        new_path = self.get_request_file_path(filename, new_status, False)
         os.rename(old_path, new_path)
 
         

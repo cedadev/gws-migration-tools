@@ -77,6 +77,10 @@ def parse_args_list(arg_list = None):
                         help='show requests for all users',
                         action='store_true')
 
+    parser.add_argument('-A', '--include-archived',
+                        help='include archived requests',
+                        action='store_true')
+
     parser.add_argument('-c', '--current',
                         help='only show requests with status NEW or SUBMITTED',
                         action='store_true')
@@ -146,7 +150,8 @@ def list_requests(args):
 
     mgr = RequestsManager(gws_root)
     for req in mgr.scan(all_users=args.all_users,
-                        statuses=statuses):
+                        statuses=statuses,
+                        include_archived=args.include_archived):
         req.dump()
     
 

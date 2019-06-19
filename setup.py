@@ -36,6 +36,7 @@ setup(
 
             'init-migrations = gws_migration_tools.init_migrations:main',
             'handle-offline-requests = gws_migration_tools.handle_requests:main',
+            'archive-offline-requests = gws_migration_tools.archive_requests:main',
             ],
         }
 )
