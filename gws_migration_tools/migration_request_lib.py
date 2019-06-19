@@ -7,10 +7,12 @@ import json
 from gws_migration_tools.util import get_user_login_name
 from gws_migration_tools.gws import get_mgr_directory
 
-## uncomment one of...
 #import gws_migration_tools.dummy_jdma_iface as jdma_iface   # dummy code only
-#from gws_migration_tools.jdma_iface import jdma_iface   # elastictape for production
-from gws_migration_tools.jdma_iface_test import jdma_iface   # objectstore for testing
+
+if '_USE_TEST_STORAGE' in os.environ:
+    from gws_migration_tools.jdma_iface_test import jdma_iface    
+else:
+    from gws_migration_tools.jdma_iface import jdma_iface
 
 
 class RequestStatus(Enum):
@@ -261,9 +263,29 @@ class RetrievalRequest(RequestBase):
         self.set_external_id(external_id)
 
 
+class DeletionRequest(RequestBase):
+
+    request_type = 'deletion'
+
+    _compulsory_params = ['orig_path']
+
+    def _dump(self, d):
+        print(" original path: {}".format(d.get('orig_path')))
+        ext_id = d.get('external_id')
+        if ext_id != None:
+            print(" external ID: {}".format(ext_id))
+
+
+    def submit(self):
+        params = self.read()
+        external_id = jdma_iface.submit_delete(params)
+        self.set_external_id(external_id)
+
+
 _request_class_map = {
     'migration': MigrationRequest,
     'retrieval': RetrievalRequest,
+    'deletion': DeletionRequest,
 }
 
 
@@ -479,18 +501,10 @@ class RequestsManager(object):
 
     def create_retrieval_request(self, *args, **kwargs):
         return self.create_request(RetrievalRequest, *args, **kwargs)
-
     
-#
-#
-#
-## assign create_*_request methods for the request types
-#for _req_type, _cls in _request_class_map.items():
-#    setattr(RequestsManager, 
-#            'create_{}_request'.format(_req_type),
-#            (lambda self, *args, **kwargs:
-#             RequestsManager.create_request(self, _cls, *args, **kwargs)))
-#
+    def create_deletion_request(self, *args, **kwargs):
+        return self.create_request(DeletionRequest, *args, **kwargs)
+    
 
 if __name__ == '__main__':
     

@@ -28,11 +28,13 @@ setup(
     zip_safe=False,
     entry_points={
         'console_scripts': [
+            'request-migration = gws_migration_tools.request_cli:main_migration',
+            'request-retrieval = gws_migration_tools.request_cli:main_retrieval',
+            'request-offline-copy-deletion = gws_migration_tools.request_cli:main_deletion',
+            'list-offline-requests = gws_migration_tools.request_cli:main_list',
+            'withdraw-offline-request = gws_migration_tools.request_cli:main_withdraw',
+
             'init-migrations = gws_migration_tools.init_migrations:main',
-            'request-migration = gws_migration_tools.request_migration:main',
-            'request-retrieval = gws_migration_tools.request_retrieval:main',
-            'list-offline-requests = gws_migration_tools.list_requests:main',
-            'withdraw-offline-request = gws_migration_tools.withdraw_request:main',
             'handle-offline-requests = gws_migration_tools.handle_requests:main',
             ],
         }

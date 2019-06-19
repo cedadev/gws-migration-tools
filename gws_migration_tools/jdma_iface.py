@@ -31,6 +31,9 @@ class JDMAInterface(object):
         Wraps jdma_lib with the following constraints:
             filelist consists of the single directory to be uploaded
             label is this directory to be uploaded
+            workspace (used for storage allocation) matches the one on which the files are located
+
+        Returns the request ID
         """
         
         path = os.path.normpath(params.get('path'))
@@ -50,8 +53,35 @@ class JDMAInterface(object):
             label=path,
             credentials=self.credentials,
             workspace=workspace)
+
+        return self._resp_to_req_id(resp)
         
-        return resp.json()['request_id']
+
+    def _resp_to_req_id(self, resp):
+        """
+        returns the request ID in the response from JDMA, 
+        or if status code was not 200, raises an exception with 
+        the error.
+        """
+        try:
+            fields = resp.json()
+        except ValueError:
+            raise JDMAInterfaceError('unparseable response from JDMA')
+
+        status_code = resp.status_code
+
+        if status_code == 200:
+            try:
+                return fields['request_id']
+            except KeyError:
+                raise JDMAInterfaceError('no request ID in JDMA response')
+            
+        elif 'error' in fields:
+            raise JDMAInterfaceError('JDMA request failed with HTTP status code {} and message: {}'
+                                     .format(status_code, fields['error']))
+        else:
+            raise JDMAInterfaceError('JDMA request failed with HTTP status code {}'
+                                     .format(status_code))
 
 
     def _get_workspace(self, path):
@@ -59,7 +89,20 @@ class JDMAInterface(object):
         return os.path.basename(os.path.normpath(gws_root))
 
     
-    def _get_batch_id_for_path(self, path):
+
+    def _get_batch_id_for_path(self, path, must_exist=False):
+        id = self._get_batch_id_for_path2(path)
+        if id == None and must_exist:
+            raise JDMAInterfaceError('could not find batch on storage for path {}'.format(path))
+        else:
+            return id
+
+
+    def _get_batch_id_for_path2(self, path):
+        """
+        Look up the batch with label = the supplied path
+        and whose location is 'ON_STORAGE'
+        """
 
         workspace = self._get_workspace(path)
 
@@ -69,24 +112,66 @@ class JDMAInterface(object):
 
         if resp.status_code == 404:
             return None
-        else:
-            return resp.json()['migration_id']
 
+        resp_dict = resp.json()
+
+        if 'migrations' in resp_dict:
+            batches = resp_dict['migrations']
+        else:
+            batches = [resp_dict]
+        
+        batch_ids = [batch['migration_id'] for batch in batches 
+                     if jdma_common.get_batch_stage(batch['stage']) == 'ON_STORAGE']
     
+        num_matches = len(batch_ids)
+
+        if num_matches == 0:
+            return None
+
+        elif num_matches == 1:
+            return batch_ids[0]
+
+        else:
+            raise JDMAInterfaceError('found more than one batch on storage for path {} (ids={})'
+                                     .format(path,
+                                             ','.join(map(str, batch_ids))))
+    
+
     def submit_retrieve(self, params):
+
+        """
+        Submit a RETRIEVE job.
+        Returns the request ID
+        """
 
         orig_path = os.path.normpath(params.get('orig_path'))
         new_path = os.path.normpath(params.get('new_path') or orig_path)
         
-        batch_id = self._get_batch_id_for_path(orig_path)
-        
+        batch_id = self._get_batch_id_for_path(orig_path, must_exist=True)
+
         resp = jdma_lib.download_files(            
             self.username,
             batch_id=batch_id,
             target_dir=new_path,
             credentials=self.credentials)
             
-        return resp.json()['request_id']
+        return self._resp_to_req_id(resp)
+
+
+    def submit_delete(self, params):
+        
+        orig_path = os.path.normpath(params.get('orig_path'))
+
+        batch_id = self._get_batch_id_for_path(orig_path, must_exist=True)
+        
+        resp = jdma_lib.delete_batch(self.username,
+                                     batch_id,
+                                     storage=self.storage_type,
+                                     credentials=self.credentials)
+         
+        return self._resp_to_req_id(resp)
+            
+        
 
 
     def check(self, params):
@@ -115,7 +200,8 @@ class JDMAInterface(object):
                                                                      time.asctime())
 
         if stage_name in ('PUT_COMPLETED',
-                          'GET_COMPLETED'):
+                          'GET_COMPLETED',
+                          'DELETE_COMPLETED'):
             succeeded = True
         
         elif stage_name == 'FAILED':

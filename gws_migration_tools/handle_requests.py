@@ -26,6 +26,11 @@ def parse_args(arg_list = None):
                            action='store_true'
                        )
 
+    req_types.add_argument('-d', '--delete',
+                           help='only act on retrieval requests',
+                           action='store_true'
+                       )
+
     action_types_container = parser.add_argument_group('action types (defaults to all)')
 
     action_types = action_types_container.add_mutually_exclusive_group()
@@ -39,6 +44,10 @@ def parse_args(arg_list = None):
                               help=('only monitor already submitted requests'),
                               action='store_true'
                           )
+
+    parser.add_argument('--debug',
+                        action='store_true')
+
 
     parser.add_argument('gws',
                         help='path to group workspace',
@@ -66,11 +75,12 @@ def main():
 
     args = parse_args()
 
-    request_types = []
     if args.migrate:
-        request_types.append('migration')
+        request_types = ['migration']
     elif args.retrieve:
-        request_types.append('retrieval')
+        request_types = ['retrieval']
+    elif args.delete:
+        request_types = ['deletion']
     else:
         request_types = None  # no filter
 
@@ -111,4 +121,5 @@ def main():
                     print("{} of request {}: failed with: {}"
                           .format(action.name, req.reqid, err))
 
-                    raise
+                    if args.debug:
+                        raise
