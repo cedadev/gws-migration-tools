@@ -203,7 +203,20 @@ class JDMAInterface(object):
 
         resp = jdma_lib.get_request(self.username, req_id=ext_id)
 
+        if resp.status_code // 100 == 5:
+            raise JDMAInterfaceError("JDMA query failure checking request {}"
+                                     .format(message, ext_id))            
+
         ext_req = resp.json()
+
+        if resp.status_code != 200:
+            try:
+                message = "JDMA error '{}'".format(ext_req['error'])
+            except KeyError:
+                message = 'JDMA unknown error'
+
+            raise JDMAInterfaceError("{} when checking request {}"
+                                     .format(message, ext_id))
 
         stage = ext_req['stage']
         stage_name = jdma_common.get_request_stage(stage)
