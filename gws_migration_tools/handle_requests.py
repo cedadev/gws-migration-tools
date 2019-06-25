@@ -1,8 +1,10 @@
 import argparse
 
+
 from gws_migration_tools import gws
 from gws_migration_tools.migration_request_lib \
     import RequestsManager, RequestStatus
+from gws_migration_tools.util import get_traceback
 
 
 def parse_args(arg_list = None):
@@ -120,6 +122,8 @@ def main():
                 except Exception as err:
                     print("{} of request {}: failed with: {}"
                           .format(action.name, req.reqid, err))
-
                     if args.debug:
-                        raise
+                        print('=============')
+                        print(err)
+                        print(get_traceback())
+                        print('=============')
